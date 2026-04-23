@@ -7,9 +7,17 @@
     <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <p class="brand">Daily Needs Helper</p>
+            <p class="brand-sub">Community Help Hub</p>
+        </div>
+    </header>
     <main class="container">
-        <h1>Daily Needs Helper</h1>
-        <p class="subtext">Community Help Hub for daily needs.</p>
+        <section class="hero">
+            <h1>Help your local community faster</h1>
+            <p class="subtext">Post daily needs, find helpers, and build trust with ratings.</p>
+        </section>
 
         <section class="card">
             <h2>Account</h2>
@@ -63,6 +71,21 @@
             <p class="meta">Top members based on trust score and ratings.</p>
             <div id="helpers-list" class="helpers"></div>
         </section>
+
+        <section class="card hidden" id="admin-panel">
+            <h2>Admin Moderation</h2>
+            <p class="meta">Review reported posts and remove or restore content.</p>
+            <div id="admin-posts-list" class="helpers"></div>
+        </section>
+
+        <section class="card">
+            <h2>Contact Requests</h2>
+            <div class="tab-row">
+                <button type="button" id="inbox-tab">Inbox</button>
+                <button type="button" id="sent-tab" class="ghost-btn">Sent</button>
+            </div>
+            <div id="contact-requests-list" class="helpers"></div>
+        </section>
     </main>
 
     <script>
@@ -73,6 +96,13 @@
         const postStatus = document.getElementById("post-status");
         const postsList = document.getElementById("posts-list");
         const helpersList = document.getElementById("helpers-list");
+        const adminPanel = document.getElementById("admin-panel");
+        const adminPostsList = document.getElementById("admin-posts-list");
+        const contactRequestsList = document.getElementById("contact-requests-list");
+        const inboxTab = document.getElementById("inbox-tab");
+        const sentTab = document.getElementById("sent-tab");
+        let activeRequestTab = "inbox";
+        let currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
 
         function setStatus(el, text, isError = false) {
             el.textContent = text;
@@ -120,6 +150,86 @@
             }
         }
 
+        async function updatePostStatus(postId, status) {
+            if (!token) {
+                alert("Please login first.");
+                return;
+            }
+            try {
+                await api(`/posts/${postId}/status`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ status })
+                });
+                loadPosts();
+                if (currentUser && currentUser.is_admin) loadAdminPosts();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function reportPost(postId) {
+            if (!token) {
+                alert("Please login first.");
+                return;
+            }
+            const reason = prompt("Why are you reporting this post?");
+            if (!reason || reason.trim().length < 5) {
+                alert("Please enter at least 5 characters.");
+                return;
+            }
+            try {
+                await api(`/posts/${postId}/report`, {
+                    method: "POST",
+                    body: JSON.stringify({ reason: reason.trim() })
+                });
+                alert("Post reported.");
+                if (currentUser && currentUser.is_admin) loadAdminPosts();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function adminToggleRemove(postId, shouldRemove) {
+            try {
+                await api(`/admin/posts/${postId}/${shouldRemove ? "remove" : "restore"}`, {
+                    method: "POST"
+                });
+                loadPosts();
+                loadAdminPosts();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function requestContact(postId) {
+            if (!token) {
+                alert("Please login first.");
+                return;
+            }
+            const message = prompt("Optional message for the owner (or leave empty):") || "";
+            try {
+                await api(`/posts/${postId}/contact-request`, {
+                    method: "POST",
+                    body: JSON.stringify({ message })
+                });
+                alert("Contact request sent.");
+                loadPosts();
+                loadContactRequests();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function updateContactRequest(requestId, action) {
+            try {
+                await api(`/contact-requests/${requestId}/${action}`, { method: "POST" });
+                loadContactRequests();
+                loadPosts();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
         async function loadPosts() {
             const city = document.getElementById("filter-city").value.trim();
             const category = document.getElementById("filter-category").value.trim();
@@ -143,7 +253,8 @@
                     <h3>${p.title}</h3>
                     <p>${p.description}</p>
                     <p><strong>Category:</strong> ${p.category} | <strong>City:</strong> ${p.city}</p>
-                    <p><strong>Contact:</strong> ${p.contact}</p>
+                    <p><strong>Status:</strong> <span class="status-chip ${p.status === "resolved" ? "status-resolved" : "status-open"}">${p.status.toUpperCase()}</span></p>
+                    <p><strong>Contact:</strong> ${p.can_view_contact ? p.contact : "Private (" + p.contact_preview + ")"}</p>
                     <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
                     <p class="meta">Posted by ${p.created_by_name}</p>
                     <div class="rating-box">
@@ -161,8 +272,83 @@
                         <input id="comment-${p.id}" placeholder="Optional comment" />
                     </div>
                 `;
+                const actions = document.createElement("div");
+                actions.className = "post-actions";
+                if (currentUser && (currentUser.id === p.created_by || currentUser.is_admin)) {
+                    const statusBtn = document.createElement("button");
+                    statusBtn.type = "button";
+                    statusBtn.textContent = p.status === "open" ? "Mark Resolved" : "Reopen";
+                    statusBtn.onclick = () => updatePostStatus(p.id, p.status === "open" ? "resolved" : "open");
+                    actions.appendChild(statusBtn);
+                }
+                if (currentUser && currentUser.id !== p.created_by) {
+                    const reportBtn = document.createElement("button");
+                    reportBtn.type = "button";
+                    reportBtn.className = "danger";
+                    reportBtn.textContent = "Report Post";
+                    reportBtn.onclick = () => reportPost(p.id);
+                    actions.appendChild(reportBtn);
+                }
+                if (currentUser && currentUser.id !== p.created_by && !p.can_view_contact) {
+                    const contactBtn = document.createElement("button");
+                    contactBtn.type = "button";
+                    if (p.contact_request_status === "pending") {
+                        contactBtn.textContent = "Request Pending";
+                        contactBtn.disabled = true;
+                    } else {
+                        contactBtn.textContent = "Request Contact";
+                        contactBtn.onclick = () => requestContact(p.id);
+                    }
+                    actions.appendChild(contactBtn);
+                }
+                if (actions.children.length > 0) div.appendChild(actions);
                 postsList.appendChild(div);
             });
+        }
+
+        async function loadContactRequests() {
+            if (!token) {
+                contactRequestsList.innerHTML = "<p>Login to manage contact requests.</p>";
+                return;
+            }
+            try {
+                const data = await api(`/contact-requests?role=${activeRequestTab}`, { method: "GET" });
+                contactRequestsList.innerHTML = "";
+                if (!data.items.length) {
+                    contactRequestsList.innerHTML = `<p>No ${activeRequestTab} requests.</p>`;
+                    return;
+                }
+                data.items.forEach((r) => {
+                    const div = document.createElement("div");
+                    div.className = "helper-item";
+                    div.innerHTML = `
+                        <div>
+                            <p><strong>${r.post_title}</strong></p>
+                            <p class="meta">${activeRequestTab === "inbox" ? "From" : "To"}: ${activeRequestTab === "inbox" ? r.requester_name : r.owner_name}</p>
+                            <p class="meta">Status: ${r.status.toUpperCase()} ${r.message ? "| Message: " + r.message : ""}</p>
+                        </div>
+                    `;
+                    if (activeRequestTab === "inbox" && r.status === "pending") {
+                        const actionWrap = document.createElement("div");
+                        actionWrap.className = "post-actions";
+                        const approveBtn = document.createElement("button");
+                        approveBtn.type = "button";
+                        approveBtn.textContent = "Approve";
+                        approveBtn.onclick = () => updateContactRequest(r.id, "approve");
+                        const rejectBtn = document.createElement("button");
+                        rejectBtn.type = "button";
+                        rejectBtn.className = "danger";
+                        rejectBtn.textContent = "Reject";
+                        rejectBtn.onclick = () => updateContactRequest(r.id, "reject");
+                        actionWrap.appendChild(approveBtn);
+                        actionWrap.appendChild(rejectBtn);
+                        div.appendChild(actionWrap);
+                    }
+                    contactRequestsList.appendChild(div);
+                });
+            } catch (err) {
+                contactRequestsList.innerHTML = `<p>${err.message}</p>`;
+            }
         }
 
         async function loadTrustedHelpers() {
@@ -204,7 +390,11 @@
                 });
                 token = data.token;
                 localStorage.setItem("token", token);
+                currentUser = data.user;
+                localStorage.setItem("currentUser", JSON.stringify(currentUser));
                 setStatus(authStatus, `Signed up as ${data.user.username}`);
+                if (currentUser.is_admin) adminPanel.classList.remove("hidden");
+                loadAdminPosts();
             } catch (err) {
                 setStatus(authStatus, err.message, true);
             }
@@ -222,7 +412,11 @@
                 });
                 token = data.token;
                 localStorage.setItem("token", token);
+                currentUser = data.user;
+                localStorage.setItem("currentUser", JSON.stringify(currentUser));
                 setStatus(authStatus, `Logged in as ${data.user.username}`);
+                if (currentUser.is_admin) adminPanel.classList.remove("hidden");
+                loadAdminPosts();
             } catch (err) {
                 setStatus(authStatus, err.message, true);
             }
@@ -258,9 +452,63 @@
             e.preventDefault();
             loadPosts();
         });
+        inboxTab.addEventListener("click", () => {
+            activeRequestTab = "inbox";
+            inboxTab.classList.remove("ghost-btn");
+            sentTab.classList.add("ghost-btn");
+            loadContactRequests();
+        });
+        sentTab.addEventListener("click", () => {
+            activeRequestTab = "sent";
+            sentTab.classList.remove("ghost-btn");
+            inboxTab.classList.add("ghost-btn");
+            loadContactRequests();
+        });
 
+        async function loadAdminPosts() {
+            if (!currentUser || !currentUser.is_admin) {
+                adminPanel.classList.add("hidden");
+                return;
+            }
+            adminPanel.classList.remove("hidden");
+            try {
+                const data = await api("/admin/posts?include_removed=true&only_reported=true", { method: "GET" });
+                adminPostsList.innerHTML = "";
+                if (!data.items.length) {
+                    adminPostsList.innerHTML = "<p>No reported posts.</p>";
+                    return;
+                }
+                data.items.forEach((p) => {
+                    const div = document.createElement("div");
+                    div.className = "helper-item";
+                    div.innerHTML = `
+                        <div>
+                            <p><strong>${p.title}</strong> (${p.city})</p>
+                            <p class="meta">By ${p.created_by_name} | Reports: ${p.report_count} | Status: ${p.status}</p>
+                        </div>
+                    `;
+                    const btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = p.is_removed ? "" : "danger";
+                    btn.textContent = p.is_removed ? "Restore" : "Remove";
+                    btn.onclick = () => adminToggleRemove(p.id, !p.is_removed);
+                    div.appendChild(btn);
+                    adminPostsList.appendChild(div);
+                });
+            } catch (err) {
+                adminPostsList.innerHTML = `<p>${err.message}</p>`;
+            }
+        }
+
+        if (currentUser && currentUser.is_admin) {
+            setStatus(authStatus, `Logged in as ${currentUser.username} (admin)`);
+        } else if (currentUser) {
+            setStatus(authStatus, `Logged in as ${currentUser.username}`);
+        }
         loadPosts();
         loadTrustedHelpers();
+        loadAdminPosts();
+        loadContactRequests();
     </script>
 </body>
 </html>
