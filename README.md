@@ -15,6 +15,11 @@ A simple community platform where users can post and discover daily needs such a
 - Create help posts
 - Search/filter posts by city, category, and keyword
 - Basic authorization using bearer token
+- Post status management (open/resolved)
+- Report post flow for moderation
+- Admin moderation panel (remove/restore reported posts)
+- Trusted helpers leaderboard
+- Contact privacy with request/approve flow
 
 ## Run Locally
 
