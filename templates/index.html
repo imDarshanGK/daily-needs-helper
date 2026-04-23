@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daily Needs Helper</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <main class="container">
+        <h1>Daily Needs Helper</h1>
+        <p class="subtext">Community Help Hub for daily needs.</p>
+
+        <section class="card">
+            <h2>Account</h2>
+            <div class="grid-two">
+                <form id="signup-form">
+                    <h3>Sign Up</h3>
+                    <input id="signup-username" placeholder="Username" required />
+                    <input id="signup-city" placeholder="City" required />
+                    <input id="signup-password" placeholder="Password" type="password" required />
+                    <button type="submit">Create Account</button>
+                </form>
+
+                <form id="login-form">
+                    <h3>Login</h3>
+                    <input id="login-username" placeholder="Username" required />
+                    <input id="login-password" placeholder="Password" type="password" required />
+                    <button type="submit">Login</button>
+                </form>
+            </div>
+            <p id="auth-status" class="status"></p>
+        </section>
+
+        <section class="card">
+            <h2>Create Help Post</h2>
+            <form id="post-form" class="stack">
+                <input id="post-title" placeholder="Title (Need room near college)" required />
+                <textarea id="post-description" placeholder="Describe your need..." required></textarea>
+                <div class="grid-two">
+                    <input id="post-category" placeholder="Category (Room/Tutor/Notes/Job/Emergency)" required />
+                    <input id="post-city" placeholder="City" required />
+                </div>
+                <input id="post-contact" placeholder="Contact (Phone/Email)" required />
+                <button type="submit">Publish Post</button>
+            </form>
+            <p id="post-status" class="status"></p>
+        </section>
+
+        <section class="card">
+            <h2>Find Help Posts</h2>
+            <form id="search-form" class="grid-three">
+                <input id="filter-city" placeholder="Filter city" />
+                <input id="filter-category" placeholder="Filter category" />
+                <input id="filter-query" placeholder="Search keyword" />
+                <button type="submit">Search</button>
+            </form>
+            <div id="posts-list" class="posts"></div>
+        </section>
+
+        <section class="card">
+            <h2>Top Trusted Helpers</h2>
+            <p class="meta">Top members based on trust score and ratings.</p>
+            <div id="helpers-list" class="helpers"></div>
+        </section>
+    </main>
+
+    <script>
+        const API = "/api";
+        let token = localStorage.getItem("token") || "";
+
+        const authStatus = document.getElementById("auth-status");
+        const postStatus = document.getElementById("post-status");
+        const postsList = document.getElementById("posts-list");
+        const helpersList = document.getElementById("helpers-list");
+
+        function setStatus(el, text, isError = false) {
+            el.textContent = text;
+            el.style.color = isError ? "#c0392b" : "#1f8b4c";
+        }
+
+        async function api(path, options = {}) {
+            const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+            if (token) headers.Authorization = `Bearer ${token}`;
+            const res = await fetch(`${API}${path}`, { ...options, headers });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || "Request failed");
+            return data;
+        }
+
+        function renderStars(score) {
+            const rounded = Math.round(score);
+            let stars = "";
+            for (let i = 1; i <= 5; i++) {
+                stars += i <= rounded ? "★" : "☆";
+            }
+            return stars;
+        }
+
+        async function submitRating(postId) {
+            if (!token) {
+                alert("Please login first to rate posts.");
+                return;
+            }
+
+            const scoreEl = document.getElementById(`score-${postId}`);
+            const commentEl = document.getElementById(`comment-${postId}`);
+            const score = Number(scoreEl.value);
+            const comment = commentEl.value.trim();
+
+            try {
+                await api(`/posts/${postId}/rate`, {
+                    method: "POST",
+                    body: JSON.stringify({ score, comment })
+                });
+                loadPosts();
+                loadTrustedHelpers();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function loadPosts() {
+            const city = document.getElementById("filter-city").value.trim();
+            const category = document.getElementById("filter-category").value.trim();
+            const q = document.getElementById("filter-query").value.trim();
+            const params = new URLSearchParams();
+            if (city) params.append("city", city);
+            if (category) params.append("category", category);
+            if (q) params.append("q", q);
+
+            const data = await api(`/posts?${params.toString()}`, { method: "GET" });
+            postsList.innerHTML = "";
+            if (!data.items.length) {
+                postsList.innerHTML = "<p>No posts yet.</p>";
+                return;
+            }
+
+            data.items.forEach((p) => {
+                const div = document.createElement("div");
+                div.className = "post-item";
+                div.innerHTML = `
+                    <h3>${p.title}</h3>
+                    <p>${p.description}</p>
+                    <p><strong>Category:</strong> ${p.category} | <strong>City:</strong> ${p.city}</p>
+                    <p><strong>Contact:</strong> ${p.contact}</p>
+                    <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
+                    <p class="meta">Posted by ${p.created_by_name}</p>
+                    <div class="rating-box">
+                        <label for="score-${p.id}">Rate this post</label>
+                        <div class="rate-row">
+                            <select id="score-${p.id}">
+                                <option value="5">5 - Excellent</option>
+                                <option value="4">4 - Good</option>
+                                <option value="3">3 - Average</option>
+                                <option value="2">2 - Poor</option>
+                                <option value="1">1 - Bad</option>
+                            </select>
+                            <button type="button" onclick="submitRating(${p.id})">Submit Rating</button>
+                        </div>
+                        <input id="comment-${p.id}" placeholder="Optional comment" />
+                    </div>
+                `;
+                postsList.appendChild(div);
+            });
+        }
+
+        async function loadTrustedHelpers() {
+            try {
+                const data = await api("/trusted-helpers?limit=5", { method: "GET" });
+                helpersList.innerHTML = "";
+                if (!data.items.length) {
+                    helpersList.innerHTML = "<p>No trusted helpers yet. Ratings will appear here.</p>";
+                    return;
+                }
+
+                data.items.forEach((h, index) => {
+                    const div = document.createElement("div");
+                    div.className = "helper-item";
+                    div.innerHTML = `
+                        <div>
+                            <p><strong>#${index + 1} ${h.username}</strong> (${h.city})</p>
+                            <p class="meta">${renderStars(h.avg_rating)} ${h.avg_rating}/5 from ${h.rating_count} rating${h.rating_count === 1 ? "" : "s"}</p>
+                        </div>
+                        <p class="meta">${h.post_count} post${h.post_count === 1 ? "" : "s"}</p>
+                    `;
+                    helpersList.appendChild(div);
+                });
+            } catch (err) {
+                helpersList.innerHTML = `<p>${err.message}</p>`;
+            }
+        }
+
+        document.getElementById("signup-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            try {
+                const data = await api("/signup", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        username: document.getElementById("signup-username").value,
+                        city: document.getElementById("signup-city").value,
+                        password: document.getElementById("signup-password").value
+                    })
+                });
+                token = data.token;
+                localStorage.setItem("token", token);
+                setStatus(authStatus, `Signed up as ${data.user.username}`);
+            } catch (err) {
+                setStatus(authStatus, err.message, true);
+            }
+        });
+
+        document.getElementById("login-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            try {
+                const data = await api("/login", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        username: document.getElementById("login-username").value,
+                        password: document.getElementById("login-password").value
+                    })
+                });
+                token = data.token;
+                localStorage.setItem("token", token);
+                setStatus(authStatus, `Logged in as ${data.user.username}`);
+            } catch (err) {
+                setStatus(authStatus, err.message, true);
+            }
+        });
+
+        document.getElementById("post-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            if (!token) {
+                setStatus(postStatus, "Please sign up or login first.", true);
+                return;
+            }
+            try {
+                await api("/posts", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        title: document.getElementById("post-title").value,
+                        description: document.getElementById("post-description").value,
+                        category: document.getElementById("post-category").value,
+                        city: document.getElementById("post-city").value,
+                        contact: document.getElementById("post-contact").value
+                    })
+                });
+                setStatus(postStatus, "Post published successfully.");
+                e.target.reset();
+                loadPosts();
+                loadTrustedHelpers();
+            } catch (err) {
+                setStatus(postStatus, err.message, true);
+            }
+        });
+
+        document.getElementById("search-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            loadPosts();
+        });
+
+        loadPosts();
+        loadTrustedHelpers();
+    </script>
+</body>
+</html>
