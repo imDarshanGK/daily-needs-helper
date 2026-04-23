@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 import hashlib
 import hmac
 import secrets
@@ -81,6 +81,8 @@ class Post(Base):
     category = Column(String(50), nullable=False)
     city = Column(String(100), nullable=False)
     contact = Column(String(100), nullable=False)
+    status = Column(String(20), default="open", nullable=False)
+    is_removed = Column(Boolean, default=False, nullable=False)
     created_by = Column(Integer, nullable=False, index=True)
     created_by_name = Column(String(50), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -98,6 +100,28 @@ class PostRating(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class PostReport(Base):
+    __tablename__ = "post_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, nullable=False, index=True)
+    reported_by_user_id = Column(Integer, nullable=False, index=True)
+    reason = Column(String(300), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ContactRequest(Base):
+    __tablename__ = "contact_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, nullable=False, index=True)
+    requester_user_id = Column(Integer, nullable=False, index=True)
+    owner_user_id = Column(Integer, nullable=False, index=True)
+    message = Column(String(300), nullable=True)
+    status = Column(String(20), default="pending", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -112,7 +136,40 @@ def run_schema_migrations() -> None:
                 connection.exec_driver_sql(
                     "ALTER TABLE post_ratings ADD COLUMN comment VARCHAR(300)"
                 )
-            connection.commit()
+
+        posts_columns = connection.exec_driver_sql(
+            "PRAGMA table_info(posts)"
+        ).fetchall()
+        if posts_columns:
+            post_column_names = {row[1] for row in posts_columns}
+            if "status" not in post_column_names:
+                connection.exec_driver_sql(
+                    "ALTER TABLE posts ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'open'"
+                )
+            if "is_removed" not in post_column_names:
+                connection.exec_driver_sql(
+                    "ALTER TABLE posts ADD COLUMN is_removed BOOLEAN NOT NULL DEFAULT 0"
+                )
+
+        connection.exec_driver_sql(
+            "UPDATE posts SET status='open' WHERE status IS NULL OR status=''"
+        )
+        connection.exec_driver_sql(
+            "UPDATE posts SET is_removed=0 WHERE is_removed IS NULL"
+        )
+        admin_count = connection.exec_driver_sql(
+            "SELECT COUNT(*) FROM users WHERE is_admin = 1"
+        ).scalar()
+        if not admin_count:
+            first_user_id = connection.exec_driver_sql(
+                "SELECT id FROM users ORDER BY id ASC LIMIT 1"
+            ).scalar()
+            if first_user_id:
+                connection.exec_driver_sql(
+                    "UPDATE users SET is_admin = 1 WHERE id = ?",
+                    (int(first_user_id),),
+                )
+        connection.commit()
 
 
 run_schema_migrations()
@@ -140,6 +197,18 @@ class PostInput(BaseModel):
 class RatingInput(BaseModel):
     score: int = Field(ge=1, le=5)
     comment: Optional[str] = Field(default="", max_length=300)
+
+
+class ReportInput(BaseModel):
+    reason: str = Field(min_length=5, max_length=300)
+
+
+class PostStatusInput(BaseModel):
+    status: Literal["open", "resolved"]
+
+
+class ContactRequestInput(BaseModel):
+    message: Optional[str] = Field(default="", max_length=300)
 
 
 def get_db():
@@ -176,9 +245,24 @@ def get_current_user(
     return user
 
 
+def ensure_admin(user: User) -> None:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def get_optional_user(authorization: Optional[str], db: Session) -> Optional[User]:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1]
+    db_token = db.query(SessionToken).filter(SessionToken.token == token).first()
+    if not db_token:
+        return None
+    return db.query(User).filter(User.id == db_token.user_id).first()
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.post("/api/signup")
@@ -187,10 +271,12 @@ def signup(payload: SignupInput, db: Session = Depends(get_db)):
     if exists:
         raise HTTPException(status_code=400, detail="Username already exists")
 
+    is_first_user = db.query(User).count() == 0
     user = User(
         username=payload.username.strip(),
         password_hash=hash_password(payload.password),
         city=payload.city.strip(),
+        is_admin=is_first_user,
     )
     db.add(user)
     db.commit()
@@ -198,7 +284,12 @@ def signup(payload: SignupInput, db: Session = Depends(get_db)):
     token = create_token_for_user(user.id, db)
     return {
         "token": token,
-        "user": {"id": user.id, "username": user.username, "city": user.city},
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "city": user.city,
+            "is_admin": user.is_admin,
+        },
     }
 
 
@@ -211,7 +302,22 @@ def login(payload: LoginInput, db: Session = Depends(get_db)):
     token = create_token_for_user(user.id, db)
     return {
         "token": token,
-        "user": {"id": user.id, "username": user.username, "city": user.city},
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "city": user.city,
+            "is_admin": user.is_admin,
+        },
+    }
+
+
+@app.get("/api/me")
+def me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "city": current_user.city,
+        "is_admin": current_user.is_admin,
     }
 
 
@@ -220,9 +326,11 @@ def list_posts(
     city: Optional[str] = Query(default=None),
     category: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Post)
+    current_user = get_optional_user(authorization, db)
+    query = db.query(Post).filter(Post.is_removed.is_(False))
 
     if city:
         query = query.filter(Post.city.ilike(f"%{city.strip()}%"))
@@ -237,6 +345,23 @@ def list_posts(
     posts = query.order_by(Post.created_at.desc()).all()
     post_ids = [p.id for p in posts]
     trust_by_post = {}
+    approved_requests = set()
+    pending_requests = set()
+
+    if current_user and post_ids:
+        rows = (
+            db.query(ContactRequest.post_id, ContactRequest.status)
+            .filter(
+                ContactRequest.post_id.in_(post_ids),
+                ContactRequest.requester_user_id == current_user.id,
+            )
+            .all()
+        )
+        for post_id, status in rows:
+            if status == "approved":
+                approved_requests.add(int(post_id))
+            elif status == "pending":
+                pending_requests.add(int(post_id))
 
     if post_ids:
         rating_rows = (
@@ -265,7 +390,29 @@ def list_posts(
                 "description": p.description,
                 "category": p.category,
                 "city": p.city,
-                "contact": p.contact,
+                "contact": p.contact
+                if (
+                    current_user
+                    and (
+                        current_user.id == p.created_by
+                        or p.id in approved_requests
+                        or current_user.is_admin
+                    )
+                )
+                else None,
+                "contact_preview": p.contact[:2] + "******",
+                "can_view_contact": bool(
+                    current_user
+                    and (
+                        current_user.id == p.created_by
+                        or p.id in approved_requests
+                        or current_user.is_admin
+                    )
+                ),
+                "contact_request_status": "approved"
+                if p.id in approved_requests
+                else ("pending" if p.id in pending_requests else "none"),
+                "status": p.status,
                 "created_by": p.created_by,
                 "created_by_name": p.created_by_name,
                 "created_at": p.created_at.isoformat(),
@@ -349,6 +496,139 @@ def create_post(
     return {"id": post.id, "message": "Post created"}
 
 
+@app.post("/api/posts/{post_id}/contact-request")
+def create_contact_request(
+    post_id: int,
+    payload: ContactRequestInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    post = db.query(Post).filter(Post.id == post_id, Post.is_removed.is_(False)).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.created_by == current_user.id:
+        raise HTTPException(status_code=400, detail="You already own this post")
+
+    existing = (
+        db.query(ContactRequest)
+        .filter(
+            ContactRequest.post_id == post_id,
+            ContactRequest.requester_user_id == current_user.id,
+            ContactRequest.status.in_(["pending", "approved"]),
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Contact request already exists")
+
+    request = ContactRequest(
+        post_id=post_id,
+        requester_user_id=current_user.id,
+        owner_user_id=post.created_by,
+        message=(payload.message or "").strip(),
+        status="pending",
+    )
+    db.add(request)
+    db.commit()
+    return {"message": "Contact request sent"}
+
+
+@app.get("/api/contact-requests")
+def list_contact_requests(
+    role: Literal["inbox", "sent"] = Query(default="inbox"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = db.query(ContactRequest)
+    if role == "inbox":
+        query = query.filter(ContactRequest.owner_user_id == current_user.id)
+    else:
+        query = query.filter(ContactRequest.requester_user_id == current_user.id)
+
+    rows = query.order_by(ContactRequest.created_at.desc()).all()
+    post_ids = [r.post_id for r in rows]
+    user_ids = [r.requester_user_id for r in rows] + [r.owner_user_id for r in rows]
+    posts = db.query(Post).filter(Post.id.in_(post_ids)).all() if post_ids else []
+    users = db.query(User).filter(User.id.in_(set(user_ids))).all() if user_ids else []
+    posts_by_id = {p.id: p for p in posts}
+    users_by_id = {u.id: u for u in users}
+
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "post_id": r.post_id,
+                "post_title": posts_by_id.get(r.post_id).title
+                if posts_by_id.get(r.post_id)
+                else "Unknown",
+                "status": r.status,
+                "message": r.message or "",
+                "requester_name": users_by_id.get(r.requester_user_id).username
+                if users_by_id.get(r.requester_user_id)
+                else "Unknown",
+                "owner_name": users_by_id.get(r.owner_user_id).username
+                if users_by_id.get(r.owner_user_id)
+                else "Unknown",
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.post("/api/contact-requests/{request_id}/approve")
+def approve_contact_request(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    req = db.query(ContactRequest).filter(ContactRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.owner_user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    req.status = "approved"
+    db.commit()
+    return {"message": "Request approved"}
+
+
+@app.post("/api/contact-requests/{request_id}/reject")
+def reject_contact_request(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    req = db.query(ContactRequest).filter(ContactRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.owner_user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    req.status = "rejected"
+    db.commit()
+    return {"message": "Request rejected"}
+
+
+@app.patch("/api/posts/{post_id}/status")
+def update_post_status(
+    post_id: int,
+    payload: PostStatusInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.is_removed:
+        raise HTTPException(status_code=400, detail="Post has been removed")
+
+    if post.created_by != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    post.status = payload.status
+    db.commit()
+    return {"message": f"Post marked as {payload.status}"}
+
+
 @app.delete("/api/posts/{post_id}")
 def delete_post(
     post_id: int,
@@ -362,9 +642,121 @@ def delete_post(
     if post.created_by != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not allowed")
 
-    db.delete(post)
+    post.is_removed = True
     db.commit()
-    return {"message": "Post deleted"}
+    return {"message": "Post removed"}
+
+
+@app.post("/api/posts/{post_id}/report")
+def report_post(
+    post_id: int,
+    payload: ReportInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    post = db.query(Post).filter(Post.id == post_id, Post.is_removed.is_(False)).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.created_by == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot report your own post")
+
+    already_reported = (
+        db.query(PostReport)
+        .filter(
+            PostReport.post_id == post_id,
+            PostReport.reported_by_user_id == current_user.id,
+        )
+        .first()
+    )
+    if already_reported:
+        raise HTTPException(status_code=400, detail="You already reported this post")
+
+    report = PostReport(
+        post_id=post_id,
+        reported_by_user_id=current_user.id,
+        reason=payload.reason.strip(),
+    )
+    db.add(report)
+    db.commit()
+    return {"message": "Post reported"}
+
+
+@app.get("/api/admin/posts")
+def list_admin_posts(
+    include_removed: bool = Query(default=True),
+    only_reported: bool = Query(default=False),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ensure_admin(current_user)
+
+    posts_query = db.query(Post)
+    if not include_removed:
+        posts_query = posts_query.filter(Post.is_removed.is_(False))
+    if only_reported:
+        reported_ids = db.query(PostReport.post_id).distinct().all()
+        reported_ids = [row[0] for row in reported_ids]
+        if not reported_ids:
+            return {"items": []}
+        posts_query = posts_query.filter(Post.id.in_(reported_ids))
+
+    posts = posts_query.order_by(Post.created_at.desc()).all()
+    post_ids = [p.id for p in posts]
+    report_counts = {}
+    if post_ids:
+        rows = (
+            db.query(PostReport.post_id, func.count(PostReport.id))
+            .filter(PostReport.post_id.in_(post_ids))
+            .group_by(PostReport.post_id)
+            .all()
+        )
+        report_counts = {int(post_id): int(count) for post_id, count in rows}
+
+    return {
+        "items": [
+            {
+                "id": p.id,
+                "title": p.title,
+                "city": p.city,
+                "status": p.status,
+                "is_removed": p.is_removed,
+                "created_by_name": p.created_by_name,
+                "report_count": report_counts.get(p.id, 0),
+                "created_at": p.created_at.isoformat(),
+            }
+            for p in posts
+        ]
+    }
+
+
+@app.post("/api/admin/posts/{post_id}/remove")
+def admin_remove_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ensure_admin(current_user)
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    post.is_removed = True
+    db.commit()
+    return {"message": "Post removed by admin"}
+
+
+@app.post("/api/admin/posts/{post_id}/restore")
+def admin_restore_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ensure_admin(current_user)
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    post.is_removed = False
+    db.commit()
+    return {"message": "Post restored by admin"}
 
 
 @app.post("/api/posts/{post_id}/rate")
