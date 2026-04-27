@@ -5,7 +5,7 @@ import hmac
 import secrets
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
@@ -263,6 +263,11 @@ def get_optional_user(authorization: Optional[str], db: Session) -> Optional[Use
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
+
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+def favicon():
+    return RedirectResponse(url="/static/favicon.svg")
 
 
 @app.post("/api/signup")
