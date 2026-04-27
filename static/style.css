@@ -33,9 +33,9 @@ body {
 }
 
 .topbar-inner {
-    max-width: 1040px;
+    max-width: 1320px;
     margin: 0 auto;
-    padding: 12px 24px;
+    padding: 12px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -55,9 +55,9 @@ body {
 }
 
 .container {
-    max-width: 1040px;
+    max-width: 1320px;
     margin: 0 auto;
-    padding: 26px 24px 42px;
+    padding: 22px 14px 34px;
 }
 
 .hero {
@@ -83,7 +83,7 @@ body {
     background: var(--panel);
     border-radius: 16px;
     padding: 18px;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
 }
@@ -111,6 +111,10 @@ h2 {
     gap: 10px;
 }
 
+.form-disabled {
+    opacity: 0.72;
+}
+
 input,
 textarea,
 select,
@@ -121,6 +125,14 @@ button {
     border-radius: 10px;
     font-size: 14px;
     transition: 0.18s ease;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled,
+button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
 }
 
 input,
@@ -279,6 +291,11 @@ button:hover {
 .status {
     min-height: 20px;
     font-weight: 600;
+}
+
+.auth-hint {
+    min-height: 18px;
+    margin-top: 8px;
 }
 
 .hidden {
