@@ -1,54 +1,66 @@
-# Daily Needs Helper (Community Help Hub)
+# Daily Needs Helper
 
-A simple community platform where users can post and discover daily needs such as notes, rooms, tutors, small jobs, and emergencies.
+Daily Needs Helper is a FastAPI web application for local community help requests. Users can create posts, discover nearby help, and manage trust and contact access with moderation controls.
 
 ## Tech Stack
 
 - Python
 - FastAPI
 - SQLite
+- SQLAlchemy
+- Jinja2 templates
 - HTML/CSS/JavaScript
 
-## Features (MVP)
+## Current Capabilities
 
-- User signup and login
-- Create help posts
-- Search/filter posts by city, category, and keyword
-- Basic authorization using bearer token
-- Post status management (open/resolved)
-- Report post flow for moderation
-- Admin moderation panel (remove/restore reported posts)
+- User signup and login with token-based authentication
+- Create and browse help posts
+- Filter posts by city, category, and keyword
+- Post status updates (open/resolved)
+- Contact privacy with request and approve/reject flow
+- Rate other users' posts and compute trust score per post
 - Trusted helpers leaderboard
-- Contact privacy with request/approve flow
+- Post reporting and admin moderation (remove/restore)
 
-## Run Locally
+## Local Setup
 
-1. Create virtual environment:
+1. Create a virtual environment.
+
+   ```bash
+   python -m venv .venv
+   ```
+
+2. Activate the environment.
+
+   Linux/macOS:
+
+   ```bash
+   source .venv/bin/activate
+   ```
+
+   Windows PowerShell:
 
    ```powershell
-   python -m venv .venv
    .\.venv\Scripts\Activate.ps1
    ```
 
-2. Install dependencies:
+3. Install dependencies.
 
-   ```powershell
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. Start server:
+4. Start the server.
 
-   ```powershell
-   uvicorn main:app --reload
+   ```bash
+   python -m uvicorn main:app --reload
    ```
 
-4. Open app:
+5. Open the app.
 
    [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
-## Next Upgrades
+## Important Notes
 
-- Ratings and trust score
-- Notifications
-- Post moderation dashboard
-- AI suggestions for related help posts
+- This project does not include seeded demo records.
+- If no users/posts exist yet, the UI will show empty states until data is created.
