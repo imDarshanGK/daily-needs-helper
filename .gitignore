@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 community_help_hub.db
+community_help_hub.backup.*.db
