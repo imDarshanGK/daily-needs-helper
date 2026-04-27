@@ -4,7 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Daily Needs Helper</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20260427" />
+    <link rel="shortcut icon" href="/static/favicon.svg?v=20260427" />
+    <link rel="stylesheet" href="/static/style.css?v=20260427" />
 </head>
 <body>
     <header class="topbar">
@@ -40,7 +42,7 @@
             <p id="auth-status" class="status"></p>
         </section>
 
-        <section class="card">
+        <section class="card" id="create-post-section">
             <h2>Create Help Post</h2>
             <form id="post-form" class="stack">
                 <input id="post-title" placeholder="Title (Need room near college)" required />
@@ -52,6 +54,7 @@
                 <input id="post-contact" placeholder="Contact (Phone/Email)" required />
                 <button type="submit">Publish Post</button>
             </form>
+            <p id="post-auth-hint" class="meta auth-hint"></p>
             <p id="post-status" class="status"></p>
         </section>
 
@@ -93,6 +96,9 @@
         let token = localStorage.getItem("token") || "";
 
         const authStatus = document.getElementById("auth-status");
+        const createPostSection = document.getElementById("create-post-section");
+        const postForm = document.getElementById("post-form");
+        const postAuthHint = document.getElementById("post-auth-hint");
         const postStatus = document.getElementById("post-status");
         const postsList = document.getElementById("posts-list");
         const helpersList = document.getElementById("helpers-list");
@@ -109,12 +115,46 @@
             el.style.color = isError ? "#c0392b" : "#1f8b4c";
         }
 
+        function updatePostFormState(shouldScroll = false) {
+            const isLoggedIn = Boolean(token);
+            const controls = postForm.querySelectorAll("input, textarea, button");
+            controls.forEach((el) => {
+                el.disabled = !isLoggedIn;
+            });
+            postForm.classList.toggle("form-disabled", !isLoggedIn);
+
+            if (!isLoggedIn) {
+                postAuthHint.textContent = "Please login or sign up to create a post.";
+                postAuthHint.style.color = "#5b6477";
+                return;
+            }
+
+            postAuthHint.textContent = "You are logged in. You can publish a post now.";
+            postAuthHint.style.color = "#1f8b4c";
+            if (shouldScroll) {
+                createPostSection.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+        }
+
         async function api(path, options = {}) {
             const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
             if (token) headers.Authorization = `Bearer ${token}`;
             const res = await fetch(`${API}${path}`, { ...options, headers });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.detail || "Request failed");
+            if (!res.ok) {
+                let message = "Request failed";
+                if (typeof data.detail === "string") {
+                    message = data.detail;
+                } else if (Array.isArray(data.detail)) {
+                    message = data.detail
+                        .map((item) => {
+                            const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : "field";
+                            return `${field}: ${item.msg || "Invalid value"}`;
+                        })
+                        .join("; ");
+                }
+                throw new Error(message);
+            }
             return data;
         }
 
@@ -247,16 +287,9 @@
             }
 
             data.items.forEach((p) => {
-                const div = document.createElement("div");
-                div.className = "post-item";
-                div.innerHTML = `
-                    <h3>${p.title}</h3>
-                    <p>${p.description}</p>
-                    <p><strong>Category:</strong> ${p.category} | <strong>City:</strong> ${p.city}</p>
-                    <p><strong>Status:</strong> <span class="status-chip ${p.status === "resolved" ? "status-resolved" : "status-open"}">${p.status.toUpperCase()}</span></p>
-                    <p><strong>Contact:</strong> ${p.can_view_contact ? p.contact : "Private (" + p.contact_preview + ")"}</p>
-                    <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
-                    <p class="meta">Posted by ${p.created_by_name}</p>
+                const canRate = currentUser && currentUser.id !== p.created_by;
+                const ratingHtml = canRate
+                    ? `
                     <div class="rating-box">
                         <label for="score-${p.id}">Rate this post</label>
                         <div class="rate-row">
@@ -271,6 +304,22 @@
                         </div>
                         <input id="comment-${p.id}" placeholder="Optional comment" />
                     </div>
+                `
+                    : `
+                    <p class="meta">${currentUser ? "You cannot rate your own post." : "Login to rate this post."}</p>
+                `;
+
+                const div = document.createElement("div");
+                div.className = "post-item";
+                div.innerHTML = `
+                    <h3>${p.title}</h3>
+                    <p>${p.description}</p>
+                    <p><strong>Category:</strong> ${p.category} | <strong>City:</strong> ${p.city}</p>
+                    <p><strong>Status:</strong> <span class="status-chip ${p.status === "resolved" ? "status-resolved" : "status-open"}">${p.status.toUpperCase()}</span></p>
+                    <p><strong>Contact:</strong> ${p.can_view_contact ? p.contact : "Private (" + p.contact_preview + ")"}</p>
+                    <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
+                    <p class="meta">Posted by ${p.created_by_name}</p>
+                    ${ratingHtml}
                 `;
                 const actions = document.createElement("div");
                 actions.className = "post-actions";
@@ -315,7 +364,7 @@
                 const data = await api(`/contact-requests?role=${activeRequestTab}`, { method: "GET" });
                 contactRequestsList.innerHTML = "";
                 if (!data.items.length) {
-                    contactRequestsList.innerHTML = `<p>No ${activeRequestTab} requests.</p>`;
+                    contactRequestsList.innerHTML = `<p>No ${activeRequestTab} requests yet. Ask another user to request contact on your post.</p>`;
                     return;
                 }
                 data.items.forEach((r) => {
@@ -356,7 +405,7 @@
                 const data = await api("/trusted-helpers?limit=5", { method: "GET" });
                 helpersList.innerHTML = "";
                 if (!data.items.length) {
-                    helpersList.innerHTML = "<p>No trusted helpers yet. Ratings will appear here.</p>";
+                    helpersList.innerHTML = "<p>No trusted helpers yet. Ratings from other users will appear here.</p>";
                     return;
                 }
 
@@ -393,8 +442,10 @@
                 currentUser = data.user;
                 localStorage.setItem("currentUser", JSON.stringify(currentUser));
                 setStatus(authStatus, `Signed up as ${data.user.username}`);
+                updatePostFormState(true);
                 if (currentUser.is_admin) adminPanel.classList.remove("hidden");
                 loadAdminPosts();
+                loadContactRequests();
             } catch (err) {
                 setStatus(authStatus, err.message, true);
             }
@@ -415,14 +466,16 @@
                 currentUser = data.user;
                 localStorage.setItem("currentUser", JSON.stringify(currentUser));
                 setStatus(authStatus, `Logged in as ${data.user.username}`);
+                updatePostFormState(true);
                 if (currentUser.is_admin) adminPanel.classList.remove("hidden");
                 loadAdminPosts();
+                loadContactRequests();
             } catch (err) {
                 setStatus(authStatus, err.message, true);
             }
         });
 
-        document.getElementById("post-form").addEventListener("submit", async (e) => {
+        postForm.addEventListener("submit", async (e) => {
             e.preventDefault();
             if (!token) {
                 setStatus(postStatus, "Please sign up or login first.", true);
@@ -475,7 +528,7 @@
                 const data = await api("/admin/posts?include_removed=true&only_reported=true", { method: "GET" });
                 adminPostsList.innerHTML = "";
                 if (!data.items.length) {
-                    adminPostsList.innerHTML = "<p>No reported posts.</p>";
+                    adminPostsList.innerHTML = "<p>No reported posts yet. Reports from users will appear here.</p>";
                     return;
                 }
                 data.items.forEach((p) => {
@@ -505,6 +558,7 @@
         } else if (currentUser) {
             setStatus(authStatus, `Logged in as ${currentUser.username}`);
         }
+        updatePostFormState();
         loadPosts();
         loadTrustedHelpers();
         loadAdminPosts();
