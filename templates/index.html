@@ -136,6 +136,41 @@
             }
         }
 
+        function validateSignupForm() {
+            const username = document.getElementById("signup-username").value.trim();
+            const city = document.getElementById("signup-city").value.trim();
+            const password = document.getElementById("signup-password").value;
+
+            if (username.length < 3) return "Username must be at least 3 characters.";
+            if (city.length < 2) return "City must be at least 2 characters.";
+            if (password.length < 6) return "Password must be at least 6 characters.";
+            return "";
+        }
+
+        function validateLoginForm() {
+            const username = document.getElementById("login-username").value.trim();
+            const password = document.getElementById("login-password").value;
+
+            if (!username) return "Username is required.";
+            if (!password) return "Password is required.";
+            return "";
+        }
+
+        function validatePostForm() {
+            const title = document.getElementById("post-title").value.trim();
+            const description = document.getElementById("post-description").value.trim();
+            const category = document.getElementById("post-category").value.trim();
+            const city = document.getElementById("post-city").value.trim();
+            const contact = document.getElementById("post-contact").value.trim();
+
+            if (title.length < 5) return "Title must be at least 5 characters.";
+            if (description.length < 10) return "Description must be at least 10 characters.";
+            if (category.length < 2) return "Category must be at least 2 characters.";
+            if (city.length < 2) return "City must be at least 2 characters.";
+            if (contact.length < 3) return "Contact must be at least 3 characters.";
+            return "";
+        }
+
         async function api(path, options = {}) {
             const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
             if (token) headers.Authorization = `Bearer ${token}`;
@@ -428,6 +463,11 @@
 
         document.getElementById("signup-form").addEventListener("submit", async (e) => {
             e.preventDefault();
+            const validationError = validateSignupForm();
+            if (validationError) {
+                setStatus(authStatus, validationError, true);
+                return;
+            }
             try {
                 const data = await api("/signup", {
                     method: "POST",
@@ -453,6 +493,11 @@
 
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
+            const validationError = validateLoginForm();
+            if (validationError) {
+                setStatus(authStatus, validationError, true);
+                return;
+            }
             try {
                 const data = await api("/login", {
                     method: "POST",
@@ -479,6 +524,11 @@
             e.preventDefault();
             if (!token) {
                 setStatus(postStatus, "Please sign up or login first.", true);
+                return;
+            }
+            const validationError = validatePostForm();
+            if (validationError) {
+                setStatus(postStatus, validationError, true);
                 return;
             }
             try {
