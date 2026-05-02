@@ -318,6 +318,49 @@ button:hover {
     display: none;
 }
 
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper input {
+    width: 100%;
+    padding-right: 38px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 8px;
+    width: auto;
+    background: none;
+    border: none;
+    padding: 4px 8px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.password-toggle:hover {
+    background: rgba(79, 70, 229, 0.1);
+    border-radius: 6px;
+}
+
+.copy-btn {
+    display: inline-block;
+    width: auto;
+    padding: 4px 8px;
+    margin-left: 6px;
+    font-size: 12px;
+    background: linear-gradient(120deg, #10b981 0%, #059669 100%);
+    border: none;
+    border-radius: 6px;
+}
+
+.copy-btn:hover {
+    background: linear-gradient(120deg, #059669 0%, #047857 100%);
+}
+
 @media (max-width: 700px) {
     .topbar-inner {
         padding: 10px 14px;

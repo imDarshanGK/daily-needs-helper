@@ -30,7 +30,10 @@
                     <p id="signup-username-error" class="field-error" aria-live="polite"></p>
                     <input id="signup-city" placeholder="City" required />
                     <p id="signup-city-error" class="field-error" aria-live="polite"></p>
-                    <input id="signup-password" placeholder="Password" type="password" required />
+                    <div class="password-input-wrapper">
+                        <input id="signup-password" placeholder="Password" type="password" required />
+                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('signup-password')">👁</button>
+                    </div>
                     <p id="signup-password-error" class="field-error" aria-live="polite"></p>
                     <button type="submit">Create Account</button>
                 </form>
@@ -39,7 +42,10 @@
                     <h3>Login</h3>
                     <input id="login-username" placeholder="Username" required />
                     <p id="login-username-error" class="field-error" aria-live="polite"></p>
-                    <input id="login-password" placeholder="Password" type="password" required />
+                    <div class="password-input-wrapper">
+                        <input id="login-password" placeholder="Password" type="password" required />
+                        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('login-password')">👁</button>
+                    </div>
                     <p id="login-password-error" class="field-error" aria-live="polite"></p>
                     <button type="submit">Login</button>
                 </form>
@@ -56,7 +62,14 @@
                 <textarea id="post-description" placeholder="Describe your need..." required></textarea>
                 <p id="post-description-error" class="field-error" aria-live="polite"></p>
                 <div class="grid-two">
-                    <input id="post-category" placeholder="Category (Room/Tutor/Notes/Job/Emergency)" required />
+                    <input id="post-category" placeholder="Category (Room/Tutor/Notes/Job/Emergency)" list="category-list" required />
+                    <datalist id="category-list">
+                        <option value="Room"></option>
+                        <option value="Tutor"></option>
+                        <option value="Notes"></option>
+                        <option value="Job"></option>
+                        <option value="Emergency"></option>
+                    </datalist>
                     <input id="post-city" placeholder="City" required />
                 </div>
                 <div class="grid-two field-error-row">
@@ -138,6 +151,38 @@
 
         function clearFieldErrors(fieldIds) {
             fieldIds.forEach((fieldId) => setFieldError(fieldId, ""));
+        }
+
+        function togglePasswordVisibility(fieldId) {
+            const input = document.getElementById(fieldId);
+            const isPassword = input.type === "password";
+            input.type = isPassword ? "text" : "password";
+        }
+
+        function setButtonLoading(button, isLoading) {
+            button.disabled = isLoading;
+            button.style.opacity = isLoading ? "0.6" : "1";
+            button.style.cursor = isLoading ? "not-allowed" : "pointer";
+        }
+
+        function setFormLoading(form, isLoading) {
+            const buttons = form.querySelectorAll("button[type='submit']");
+            buttons.forEach((btn) => setButtonLoading(btn, isLoading));
+        }
+
+        function copyToClipboard(text, feedback) {
+            navigator.clipboard.writeText(text).then(() => {
+                const original = feedback.textContent;
+                feedback.textContent = "Copied!";
+                setTimeout(() => {
+                    feedback.textContent = original;
+                }, 2000);
+            }).catch(() => {
+                feedback.textContent = "Copy failed";
+                setTimeout(() => {
+                    feedback.textContent = "Copy to clipboard";
+                }, 2000);
+            });
         }
 
         function syncFieldError(inputId, isValid, message) {
@@ -485,12 +530,15 @@
 
                     const div = document.createElement("div");
                     div.className = "post-item";
+                    const contactDisplay = p.can_view_contact 
+                        ? `<p><strong>Contact:</strong> ${p.contact} <button type="button" class="copy-btn" onclick="copyToClipboard('${p.contact.replace(/'/g, "\\'")}', this)">📋 Copy</button></p>`
+                        : `<p><strong>Contact:</strong> Private (${p.contact_preview})</p>`;
                     div.innerHTML = `
                         <h3>${p.title}</h3>
                         <p>${p.description}</p>
                         <p><strong>Category:</strong> ${p.category} | <strong>City:</strong> ${p.city}</p>
                         <p><strong>Status:</strong> <span class="status-chip ${p.status === "resolved" ? "status-resolved" : "status-open"}">${p.status.toUpperCase()}</span></p>
-                        <p><strong>Contact:</strong> ${p.can_view_contact ? p.contact : "Private (" + p.contact_preview + ")"}</p>
+                        ${contactDisplay}
                         <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
                         <p class="meta">Posted by ${p.created_by_name}</p>
                         ${ratingHtml}
@@ -608,6 +656,8 @@
             if (!validateSignupForm()) {
                 return;
             }
+            const form = e.target;
+            setFormLoading(form, true);
             try {
                 const data = await api("/signup", {
                     method: "POST",
@@ -628,6 +678,8 @@
                 loadContactRequests();
             } catch (err) {
                 setStatus(authStatus, err.message, true);
+            } finally {
+                setFormLoading(form, false);
             }
         });
 
@@ -636,6 +688,8 @@
             if (!validateLoginForm()) {
                 return;
             }
+            const form = e.target;
+            setFormLoading(form, true);
             try {
                 const data = await api("/login", {
                     method: "POST",
@@ -655,6 +709,8 @@
                 loadContactRequests();
             } catch (err) {
                 setStatus(authStatus, err.message, true);
+            } finally {
+                setFormLoading(form, false);
             }
         });
 
@@ -667,6 +723,7 @@
             if (!validatePostForm()) {
                 return;
             }
+            setFormLoading(postForm, true);
             try {
                 await api("/posts", {
                     method: "POST",
@@ -684,6 +741,8 @@
                 loadTrustedHelpers();
             } catch (err) {
                 setStatus(postStatus, err.message, true);
+            } finally {
+                setFormLoading(postForm, false);
             }
         });
 
