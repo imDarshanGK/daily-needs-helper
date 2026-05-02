@@ -27,15 +27,20 @@
                 <form id="signup-form">
                     <h3>Sign Up</h3>
                     <input id="signup-username" placeholder="Username" required />
+                    <p id="signup-username-error" class="field-error" aria-live="polite"></p>
                     <input id="signup-city" placeholder="City" required />
+                    <p id="signup-city-error" class="field-error" aria-live="polite"></p>
                     <input id="signup-password" placeholder="Password" type="password" required />
+                    <p id="signup-password-error" class="field-error" aria-live="polite"></p>
                     <button type="submit">Create Account</button>
                 </form>
 
                 <form id="login-form">
                     <h3>Login</h3>
                     <input id="login-username" placeholder="Username" required />
+                    <p id="login-username-error" class="field-error" aria-live="polite"></p>
                     <input id="login-password" placeholder="Password" type="password" required />
+                    <p id="login-password-error" class="field-error" aria-live="polite"></p>
                     <button type="submit">Login</button>
                 </form>
             </div>
@@ -47,12 +52,19 @@
             <h2>Create Help Post</h2>
             <form id="post-form" class="stack">
                 <input id="post-title" placeholder="Title (Need room near college)" required />
+                <p id="post-title-error" class="field-error" aria-live="polite"></p>
                 <textarea id="post-description" placeholder="Describe your need..." required></textarea>
+                <p id="post-description-error" class="field-error" aria-live="polite"></p>
                 <div class="grid-two">
                     <input id="post-category" placeholder="Category (Room/Tutor/Notes/Job/Emergency)" required />
                     <input id="post-city" placeholder="City" required />
                 </div>
+                <div class="grid-two field-error-row">
+                    <p id="post-category-error" class="field-error" aria-live="polite"></p>
+                    <p id="post-city-error" class="field-error" aria-live="polite"></p>
+                </div>
                 <input id="post-contact" placeholder="Contact (Phone/Email)" required />
+                <p id="post-contact-error" class="field-error" aria-live="polite"></p>
                 <button type="submit">Publish Post</button>
             </form>
             <p id="post-auth-hint" class="meta auth-hint"></p>
@@ -117,6 +129,30 @@
             el.style.color = isError ? "#c0392b" : "#1f8b4c";
         }
 
+        function setFieldError(inputId, message) {
+            const errorEl = document.getElementById(`${inputId}-error`);
+            const inputEl = document.getElementById(inputId);
+            if (errorEl) errorEl.textContent = message;
+            if (inputEl) inputEl.classList.toggle("input-error", Boolean(message));
+        }
+
+        function clearFieldErrors(fieldIds) {
+            fieldIds.forEach((fieldId) => setFieldError(fieldId, ""));
+        }
+
+        function syncFieldError(inputId, isValid, message) {
+            const inputEl = document.getElementById(inputId);
+            const errorEl = document.getElementById(`${inputId}-error`);
+            if (!inputEl || !errorEl) return;
+            if (isValid) {
+                errorEl.textContent = "";
+                inputEl.classList.remove("input-error");
+            } else if (inputEl.value.trim() || inputEl === document.activeElement) {
+                errorEl.textContent = message;
+                inputEl.classList.add("input-error");
+            }
+        }
+
         function updatePostFormState(shouldScroll = false) {
             const isLoggedIn = Boolean(token);
             const controls = postForm.querySelectorAll("input, textarea, button");
@@ -161,19 +197,38 @@
             const city = document.getElementById("signup-city").value.trim();
             const password = document.getElementById("signup-password").value;
 
-            if (username.length < 3) return "Username must be at least 3 characters.";
-            if (city.length < 2) return "City must be at least 2 characters.";
-            if (password.length < 6) return "Password must be at least 6 characters.";
-            return "";
+            clearFieldErrors(["signup-username", "signup-city", "signup-password"]);
+
+            if (username.length < 3) {
+                setFieldError("signup-username", "Username must be at least 3 characters.");
+                return false;
+            }
+            if (city.length < 2) {
+                setFieldError("signup-city", "City must be at least 2 characters.");
+                return false;
+            }
+            if (password.length < 6) {
+                setFieldError("signup-password", "Password must be at least 6 characters.");
+                return false;
+            }
+            return true;
         }
 
         function validateLoginForm() {
             const username = document.getElementById("login-username").value.trim();
             const password = document.getElementById("login-password").value;
 
-            if (!username) return "Username is required.";
-            if (!password) return "Password is required.";
-            return "";
+            clearFieldErrors(["login-username", "login-password"]);
+
+            if (!username) {
+                setFieldError("login-username", "Username is required.");
+                return false;
+            }
+            if (!password) {
+                setFieldError("login-password", "Password is required.");
+                return false;
+            }
+            return true;
         }
 
         function validatePostForm() {
@@ -183,13 +238,67 @@
             const city = document.getElementById("post-city").value.trim();
             const contact = document.getElementById("post-contact").value.trim();
 
-            if (title.length < 5) return "Title must be at least 5 characters.";
-            if (description.length < 10) return "Description must be at least 10 characters.";
-            if (category.length < 2) return "Category must be at least 2 characters.";
-            if (city.length < 2) return "City must be at least 2 characters.";
-            if (contact.length < 3) return "Contact must be at least 3 characters.";
-            return "";
+            clearFieldErrors([
+                "post-title",
+                "post-description",
+                "post-category",
+                "post-city",
+                "post-contact"
+            ]);
+
+            if (title.length < 5) {
+                setFieldError("post-title", "Title must be at least 5 characters.");
+                return false;
+            }
+            if (description.length < 10) {
+                setFieldError("post-description", "Description must be at least 10 characters.");
+                return false;
+            }
+            if (category.length < 2) {
+                setFieldError("post-category", "Category must be at least 2 characters.");
+                return false;
+            }
+            if (city.length < 2) {
+                setFieldError("post-city", "City must be at least 2 characters.");
+                return false;
+            }
+            if (contact.length < 3) {
+                setFieldError("post-contact", "Contact must be at least 3 characters.");
+                return false;
+            }
+            return true;
         }
+
+        [
+            ["signup-username", 3, "Username must be at least 3 characters."],
+            ["signup-city", 2, "City must be at least 2 characters."],
+            ["signup-password", 6, "Password must be at least 6 characters."]
+        ].forEach(([fieldId, minLength, message]) => {
+            document.getElementById(fieldId).addEventListener("input", (event) => {
+                syncFieldError(fieldId, event.target.value.trim().length >= minLength, message);
+            });
+        });
+
+        [
+            ["login-username", null, "Username is required."],
+            ["login-password", null, "Password is required."]
+        ].forEach(([fieldId, minLength, message]) => {
+            document.getElementById(fieldId).addEventListener("input", (event) => {
+                syncFieldError(fieldId, Boolean(event.target.value.trim()), message);
+            });
+        });
+
+        [
+            ["post-title", 5, "Title must be at least 5 characters."],
+            ["post-description", 10, "Description must be at least 10 characters."],
+            ["post-category", 2, "Category must be at least 2 characters."],
+            ["post-city", 2, "City must be at least 2 characters."],
+            ["post-contact", 3, "Contact must be at least 3 characters."]
+        ].forEach(([fieldId, minLength, message]) => {
+            document.getElementById(fieldId).addEventListener("input", (event) => {
+                syncFieldError(fieldId, event.target.value.trim().length >= minLength, message);
+            });
+        });
 
         async function api(path, options = {}) {
             const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
@@ -483,9 +592,7 @@
 
         document.getElementById("signup-form").addEventListener("submit", async (e) => {
             e.preventDefault();
-            const validationError = validateSignupForm();
-            if (validationError) {
-                setStatus(authStatus, validationError, true);
+            if (!validateSignupForm()) {
                 return;
             }
             try {
@@ -513,9 +620,7 @@
 
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
-            const validationError = validateLoginForm();
-            if (validationError) {
-                setStatus(authStatus, validationError, true);
+            if (!validateLoginForm()) {
                 return;
             }
             try {
@@ -546,9 +651,7 @@
                 setStatus(postStatus, "Please sign up or login first.", true);
                 return;
             }
-            const validationError = validatePostForm();
-            if (validationError) {
-                setStatus(postStatus, validationError, true);
+            if (!validatePostForm()) {
                 return;
             }
             try {
