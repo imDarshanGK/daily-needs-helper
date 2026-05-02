@@ -199,19 +199,22 @@
 
             clearFieldErrors(["signup-username", "signup-city", "signup-password"]);
 
+            let isValid = true;
+
             if (username.length < 3) {
                 setFieldError("signup-username", "Username must be at least 3 characters.");
-                return false;
+                isValid = false;
             }
             if (city.length < 2) {
                 setFieldError("signup-city", "City must be at least 2 characters.");
-                return false;
+                isValid = false;
             }
             if (password.length < 6) {
                 setFieldError("signup-password", "Password must be at least 6 characters.");
-                return false;
+                isValid = false;
             }
-            return true;
+
+            return isValid;
         }
 
         function validateLoginForm() {
@@ -220,15 +223,18 @@
 
             clearFieldErrors(["login-username", "login-password"]);
 
+            let isValid = true;
+
             if (!username) {
                 setFieldError("login-username", "Username is required.");
-                return false;
+                isValid = false;
             }
             if (!password) {
                 setFieldError("login-password", "Password is required.");
-                return false;
+                isValid = false;
             }
-            return true;
+
+            return isValid;
         }
 
         function validatePostForm() {
@@ -246,27 +252,30 @@
                 "post-contact"
             ]);
 
+            let isValid = true;
+
             if (title.length < 5) {
                 setFieldError("post-title", "Title must be at least 5 characters.");
-                return false;
+                isValid = false;
             }
             if (description.length < 10) {
                 setFieldError("post-description", "Description must be at least 10 characters.");
-                return false;
+                isValid = false;
             }
             if (category.length < 2) {
                 setFieldError("post-category", "Category must be at least 2 characters.");
-                return false;
+                isValid = false;
             }
             if (city.length < 2) {
                 setFieldError("post-city", "City must be at least 2 characters.");
-                return false;
+                isValid = false;
             }
             if (contact.length < 3) {
                 setFieldError("post-contact", "Contact must be at least 3 characters.");
-                return false;
+                isValid = false;
             }
-            return true;
+
+            return isValid;
         }
 
         [
@@ -443,80 +452,84 @@
             if (category) params.append("category", category);
             if (q) params.append("q", q);
 
-            const data = await api(`/posts?${params.toString()}`, { method: "GET" });
-            postsList.innerHTML = "";
-            if (!data.items.length) {
-                postsList.innerHTML = "<p>No posts yet.</p>";
-                return;
-            }
+            try {
+                const data = await api(`/posts?${params.toString()}`, { method: "GET" });
+                postsList.innerHTML = "";
+                if (!data.items.length) {
+                    postsList.innerHTML = "<p>No posts yet.</p>";
+                    return;
+                }
 
-            data.items.forEach((p) => {
-                const canRate = currentUser && currentUser.id !== p.created_by;
-                const ratingHtml = canRate
-                    ? `
-                    <div class="rating-box">
-                        <label for="score-${p.id}">Rate this post</label>
-                        <div class="rate-row">
-                            <select id="score-${p.id}">
-                                <option value="5">5 - Excellent</option>
-                                <option value="4">4 - Good</option>
-                                <option value="3">3 - Average</option>
-                                <option value="2">2 - Poor</option>
-                                <option value="1">1 - Bad</option>
-                            </select>
-                            <button type="button" onclick="submitRating(${p.id})">Submit Rating</button>
+                data.items.forEach((p) => {
+                    const canRate = currentUser && currentUser.id !== p.created_by;
+                    const ratingHtml = canRate
+                        ? `
+                        <div class="rating-box">
+                            <label for="score-${p.id}">Rate this post</label>
+                            <div class="rate-row">
+                                <select id="score-${p.id}">
+                                    <option value="5">5 - Excellent</option>
+                                    <option value="4">4 - Good</option>
+                                    <option value="3">3 - Average</option>
+                                    <option value="2">2 - Poor</option>
+                                    <option value="1">1 - Bad</option>
+                                </select>
+                                <button type="button" onclick="submitRating(${p.id})">Submit Rating</button>
+                            </div>
+                            <input id="comment-${p.id}" placeholder="Optional comment" />
                         </div>
-                        <input id="comment-${p.id}" placeholder="Optional comment" />
-                    </div>
-                `
-                    : `
-                    <p class="meta">${currentUser ? "You cannot rate your own post." : "Login to rate this post."}</p>
-                `;
+                    `
+                        : `
+                        <p class="meta">${currentUser ? "You cannot rate your own post." : "Login to rate this post."}</p>
+                    `;
 
-                const div = document.createElement("div");
-                div.className = "post-item";
-                div.innerHTML = `
-                    <h3>${p.title}</h3>
-                    <p>${p.description}</p>
-                    <p><strong>Category:</strong> ${p.category} | <strong>City:</strong> ${p.city}</p>
-                    <p><strong>Status:</strong> <span class="status-chip ${p.status === "resolved" ? "status-resolved" : "status-open"}">${p.status.toUpperCase()}</span></p>
-                    <p><strong>Contact:</strong> ${p.can_view_contact ? p.contact : "Private (" + p.contact_preview + ")"}</p>
-                    <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
-                    <p class="meta">Posted by ${p.created_by_name}</p>
-                    ${ratingHtml}
-                `;
-                const actions = document.createElement("div");
-                actions.className = "post-actions";
-                if (currentUser && (currentUser.id === p.created_by || currentUser.is_admin)) {
-                    const statusBtn = document.createElement("button");
-                    statusBtn.type = "button";
-                    statusBtn.textContent = p.status === "open" ? "Mark Resolved" : "Reopen";
-                    statusBtn.onclick = () => updatePostStatus(p.id, p.status === "open" ? "resolved" : "open");
-                    actions.appendChild(statusBtn);
-                }
-                if (currentUser && currentUser.id !== p.created_by) {
-                    const reportBtn = document.createElement("button");
-                    reportBtn.type = "button";
-                    reportBtn.className = "danger";
-                    reportBtn.textContent = "Report Post";
-                    reportBtn.onclick = () => reportPost(p.id);
-                    actions.appendChild(reportBtn);
-                }
-                if (currentUser && currentUser.id !== p.created_by && !p.can_view_contact) {
-                    const contactBtn = document.createElement("button");
-                    contactBtn.type = "button";
-                    if (p.contact_request_status === "pending") {
-                        contactBtn.textContent = "Request Pending";
-                        contactBtn.disabled = true;
-                    } else {
-                        contactBtn.textContent = "Request Contact";
-                        contactBtn.onclick = () => requestContact(p.id);
+                    const div = document.createElement("div");
+                    div.className = "post-item";
+                    div.innerHTML = `
+                        <h3>${p.title}</h3>
+                        <p>${p.description}</p>
+                        <p><strong>Category:</strong> ${p.category} | <strong>City:</strong> ${p.city}</p>
+                        <p><strong>Status:</strong> <span class="status-chip ${p.status === "resolved" ? "status-resolved" : "status-open"}">${p.status.toUpperCase()}</span></p>
+                        <p><strong>Contact:</strong> ${p.can_view_contact ? p.contact : "Private (" + p.contact_preview + ")"}</p>
+                        <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
+                        <p class="meta">Posted by ${p.created_by_name}</p>
+                        ${ratingHtml}
+                    `;
+                    const actions = document.createElement("div");
+                    actions.className = "post-actions";
+                    if (currentUser && (currentUser.id === p.created_by || currentUser.is_admin)) {
+                        const statusBtn = document.createElement("button");
+                        statusBtn.type = "button";
+                        statusBtn.textContent = p.status === "open" ? "Mark Resolved" : "Reopen";
+                        statusBtn.onclick = () => updatePostStatus(p.id, p.status === "open" ? "resolved" : "open");
+                        actions.appendChild(statusBtn);
                     }
-                    actions.appendChild(contactBtn);
-                }
-                if (actions.children.length > 0) div.appendChild(actions);
-                postsList.appendChild(div);
-            });
+                    if (currentUser && currentUser.id !== p.created_by) {
+                        const reportBtn = document.createElement("button");
+                        reportBtn.type = "button";
+                        reportBtn.className = "danger";
+                        reportBtn.textContent = "Report Post";
+                        reportBtn.onclick = () => reportPost(p.id);
+                        actions.appendChild(reportBtn);
+                    }
+                    if (currentUser && currentUser.id !== p.created_by && !p.can_view_contact) {
+                        const contactBtn = document.createElement("button");
+                        contactBtn.type = "button";
+                        if (p.contact_request_status === "pending") {
+                            contactBtn.textContent = "Request Pending";
+                            contactBtn.disabled = true;
+                        } else {
+                            contactBtn.textContent = "Request Contact";
+                            contactBtn.onclick = () => requestContact(p.id);
+                        }
+                        actions.appendChild(contactBtn);
+                    }
+                    if (actions.children.length > 0) div.appendChild(actions);
+                    postsList.appendChild(div);
+                });
+            } catch (err) {
+                postsList.innerHTML = `<p class="field-error">${err.message}</p>`;
+            }
         }
 
         async function loadContactRequests() {
@@ -730,16 +743,40 @@
             }
         }
 
-        if (currentUser && currentUser.is_admin) {
-            setStatus(authStatus, `Logged in as ${currentUser.username} (admin)`);
-        } else if (currentUser) {
-            setStatus(authStatus, `Logged in as ${currentUser.username}`);
+        async function hydrateSession() {
+            if (!token) {
+                currentUser = null;
+                localStorage.removeItem("currentUser");
+                updatePostFormState();
+                return;
+            }
+
+            try {
+                const me = await api("/me", { method: "GET" });
+                currentUser = me;
+                localStorage.setItem("currentUser", JSON.stringify(currentUser));
+                if (currentUser.is_admin) {
+                    setStatus(authStatus, `Logged in as ${currentUser.username} (admin)`);
+                } else {
+                    setStatus(authStatus, `Logged in as ${currentUser.username}`);
+                }
+            } catch (err) {
+                clearSession();
+                setStatus(authStatus, "Session expired. Please log in again.", true);
+            }
+
+            updatePostFormState();
         }
-        updatePostFormState();
-        loadPosts();
-        loadTrustedHelpers();
-        loadAdminPosts();
-        loadContactRequests();
+
+        async function initializeApp() {
+            await hydrateSession();
+            loadPosts();
+            loadTrustedHelpers();
+            loadAdminPosts();
+            loadContactRequests();
+        }
+
+        initializeApp();
     </script>
 </body>
 </html>
