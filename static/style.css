@@ -298,6 +298,22 @@ button:hover {
     margin-top: 8px;
 }
 
+.field-error {
+    min-height: 16px;
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #c0392b;
+}
+
+.field-error-row {
+    margin-top: -6px;
+}
+
+.input-error {
+    border-color: #e11d48 !important;
+    box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.14);
+}
+
 .hidden {
     display: none;
 }
