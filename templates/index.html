@@ -40,6 +40,7 @@
                 </form>
             </div>
             <p id="auth-status" class="status"></p>
+            <button type="button" id="logout-btn" class="ghost-btn hidden">Logout</button>
         </section>
 
         <section class="card" id="create-post-section">
@@ -96,6 +97,7 @@
         let token = localStorage.getItem("token") || "";
 
         const authStatus = document.getElementById("auth-status");
+        const logoutBtn = document.getElementById("logout-btn");
         const createPostSection = document.getElementById("create-post-section");
         const postForm = document.getElementById("post-form");
         const postAuthHint = document.getElementById("post-auth-hint");
@@ -122,6 +124,7 @@
                 el.disabled = !isLoggedIn;
             });
             postForm.classList.toggle("form-disabled", !isLoggedIn);
+            logoutBtn.classList.toggle("hidden", !isLoggedIn);
 
             if (!isLoggedIn) {
                 postAuthHint.textContent = "Please login or sign up to create a post.";
@@ -134,6 +137,23 @@
             if (shouldScroll) {
                 createPostSection.scrollIntoView({ behavior: "smooth", block: "start" });
             }
+        }
+
+        function clearSession() {
+            token = "";
+            currentUser = null;
+            localStorage.removeItem("token");
+            localStorage.removeItem("currentUser");
+            document.getElementById("signup-form").reset();
+            document.getElementById("login-form").reset();
+            postForm.reset();
+            postStatus.textContent = "";
+            authStatus.textContent = "Logged out.";
+            authStatus.style.color = "#1f8b4c";
+            adminPanel.classList.add("hidden");
+            loadAdminPosts();
+            loadContactRequests();
+            updatePostFormState();
         }
 
         function validateSignupForm() {
@@ -566,6 +586,10 @@
             sentTab.classList.remove("ghost-btn");
             inboxTab.classList.add("ghost-btn");
             loadContactRequests();
+        });
+
+        logoutBtn.addEventListener("click", () => {
+            clearSession();
         });
 
         async function loadAdminPosts() {
