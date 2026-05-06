@@ -1,6 +1,19 @@
 # Daily Needs Helper
 
-A community-first platform for posting local needs, discovering helpers, and building trust through ratings-all with privacy controls built in.
+A community-first platform for posting local needs, discovering helpers, and building trust through ratings, with privacy controls built in.
+
+## Overview
+
+Daily Needs Helper is a small but complete community support app built with FastAPI and a vanilla JavaScript frontend. It focuses on practical local use: post a need, find help nearby, request contact securely, and build trust through ratings and moderation.
+
+## Highlights
+
+- FastAPI backend with SQLite persistence
+- Token-based authentication with session validation
+- Search, sort, and pagination for help posts
+- Contact privacy workflow with approve/reject requests
+- Ratings, trusted helpers, reports, and admin moderation
+- Inline editing, validation, and loading feedback in the UI
 
 ## Features
 
@@ -111,11 +124,7 @@ database.db            # SQLite database (created on first run)
 - Top Trusted Helpers shows top 5 by average rating score
 - Ratings visible on each post (e.g., "★★★★☆ 4/5 from 3 ratings")
 
-### Admin Panel
-- Only admin users see the panel
-- Shows reported posts with report counts
-- Admins can remove posts permanently or restore them
-- Removed posts stay in database bu marked as removed
+
 
 
 ## Architecture
