@@ -1,4 +1,5 @@
 from datetime import datetime
+from math import ceil
 from typing import Literal, Optional
 import hashlib
 import hmac
@@ -194,6 +195,14 @@ class PostInput(BaseModel):
     contact: str = Field(min_length=3, max_length=100)
 
 
+class PostUpdateInput(BaseModel):
+    title: str = Field(min_length=5, max_length=150)
+    description: str = Field(min_length=10, max_length=1000)
+    category: str = Field(min_length=2, max_length=50)
+    city: str = Field(min_length=2, max_length=100)
+    contact: str = Field(min_length=3, max_length=100)
+
+
 class RatingInput(BaseModel):
     score: int = Field(ge=1, le=5)
     comment: Optional[str] = Field(default="", max_length=300)
@@ -331,6 +340,9 @@ def list_posts(
     city: Optional[str] = Query(default=None),
     category: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    sort: Literal["newest", "oldest", "top-rated"] = Query(default="newest"),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=10, ge=1, le=50),
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
@@ -347,7 +359,34 @@ def list_posts(
             (Post.title.ilike(f"%{term}%")) | (Post.description.ilike(f"%{term}%"))
         )
 
-    posts = query.order_by(Post.created_at.desc()).all()
+    rating_stats = (
+        db.query(
+            PostRating.post_id.label("post_id"),
+            func.avg(PostRating.score).label("avg_rating"),
+            func.count(PostRating.id).label("rating_count"),
+        )
+        .group_by(PostRating.post_id)
+        .subquery()
+    )
+
+    if sort == "oldest":
+        query = query.order_by(Post.created_at.asc())
+    elif sort == "top-rated":
+        query = (
+            query.outerjoin(rating_stats, Post.id == rating_stats.c.post_id)
+            .order_by(
+                func.coalesce(rating_stats.c.avg_rating, 0).desc(),
+                func.coalesce(rating_stats.c.rating_count, 0).desc(),
+                Post.created_at.desc(),
+            )
+        )
+    else:
+        query = query.order_by(Post.created_at.desc())
+
+    total_items = query.count()
+    total_pages = max(1, ceil(total_items / limit)) if total_items else 1
+    offset = (page - 1) * limit
+    posts = query.offset(offset).limit(limit).all()
     post_ids = [p.id for p in posts]
     trust_by_post = {}
     approved_requests = set()
@@ -388,6 +427,10 @@ def list_posts(
         }
 
     return {
+        "page": page,
+        "limit": limit,
+        "total_items": total_items,
+        "total_pages": total_pages,
         "items": [
             {
                 "id": p.id,
@@ -650,6 +693,30 @@ def delete_post(
     post.is_removed = True
     db.commit()
     return {"message": "Post removed"}
+
+
+@app.patch("/api/posts/{post_id}")
+def update_post(
+    post_id: int,
+    payload: PostUpdateInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.is_removed:
+        raise HTTPException(status_code=400, detail="Post has been removed")
+    if post.created_by != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    post.title = payload.title.strip()
+    post.description = payload.description.strip()
+    post.category = payload.category.strip()
+    post.city = payload.city.strip()
+    post.contact = payload.contact.strip()
+    db.commit()
+    return {"message": "Post updated"}
 
 
 @app.post("/api/posts/{post_id}/report")

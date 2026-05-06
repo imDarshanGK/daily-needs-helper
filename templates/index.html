@@ -90,8 +90,20 @@
                 <input id="filter-city" placeholder="Filter city" />
                 <input id="filter-category" placeholder="Filter category" />
                 <input id="filter-query" placeholder="Search keyword" />
+                <select id="posts-sort">
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="top-rated">Top rated</option>
+                </select>
                 <button type="submit">Search</button>
             </form>
+            <div class="posts-toolbar">
+                <p id="posts-page-info" class="meta"></p>
+                <div class="post-pagination">
+                    <button type="button" id="posts-prev-btn" class="ghost-btn">Previous</button>
+                    <button type="button" id="posts-next-btn">Next</button>
+                </div>
+            </div>
             <div id="posts-list" class="posts"></div>
         </section>
 
@@ -128,6 +140,10 @@
         const postAuthHint = document.getElementById("post-auth-hint");
         const postStatus = document.getElementById("post-status");
         const postsList = document.getElementById("posts-list");
+        const postsPageInfo = document.getElementById("posts-page-info");
+        const postsPrevBtn = document.getElementById("posts-prev-btn");
+        const postsNextBtn = document.getElementById("posts-next-btn");
+        const postsSortSelect = document.getElementById("posts-sort");
         const helpersList = document.getElementById("helpers-list");
         const adminPanel = document.getElementById("admin-panel");
         const adminPostsList = document.getElementById("admin-posts-list");
@@ -136,6 +152,10 @@
         const sentTab = document.getElementById("sent-tab");
         let activeRequestTab = "inbox";
         let currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+        let currentPostsPage = 1;
+        const postsPageSize = 10;
+        let currentPostsSort = "newest";
+        let editingPostId = null;
 
         function setStatus(el, text, isError = false) {
             el.textContent = text;
@@ -185,6 +205,70 @@
             });
         }
 
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function setPostsPagination(page, totalPages, totalItems) {
+            currentPostsPage = page;
+            postsPageInfo.textContent = totalItems
+                ? `Page ${page} of ${totalPages} · ${totalItems} post${totalItems === 1 ? "" : "s"}`
+                : "No posts found.";
+            postsPrevBtn.disabled = page <= 1 || totalItems === 0;
+            postsNextBtn.disabled = page >= totalPages || totalItems === 0;
+        }
+
+        function startEditingPost(postId) {
+            editingPostId = postId;
+            loadPosts();
+        }
+
+        function cancelEditingPost() {
+            editingPostId = null;
+            loadPosts();
+        }
+
+        async function saveEditedPost(postId) {
+            const title = document.getElementById(`edit-title-${postId}`).value.trim();
+            const description = document.getElementById(`edit-description-${postId}`).value.trim();
+            const category = document.getElementById(`edit-category-${postId}`).value.trim();
+            const city = document.getElementById(`edit-city-${postId}`).value.trim();
+            const contact = document.getElementById(`edit-contact-${postId}`).value.trim();
+            const statusEl = document.getElementById(`edit-status-${postId}`);
+
+            if (statusEl) {
+                statusEl.textContent = "";
+            }
+
+            if (title.length < 5 || description.length < 10 || category.length < 2 || city.length < 2 || contact.length < 3) {
+                if (statusEl) {
+                    statusEl.textContent = "Please complete all fields before saving.";
+                }
+                return;
+            }
+
+            try {
+                await api(`/posts/${postId}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ title, description, category, city, contact })
+                });
+                editingPostId = null;
+                loadPosts();
+                if (currentUser && currentUser.is_admin) {
+                    loadAdminPosts();
+                }
+            } catch (err) {
+                if (statusEl) {
+                    statusEl.textContent = err.message;
+                }
+            }
+        }
+
         function syncFieldError(inputId, isValid, message) {
             const inputEl = document.getElementById(inputId);
             const errorEl = document.getElementById(`${inputId}-error`);
@@ -223,6 +307,7 @@
         function clearSession() {
             token = "";
             currentUser = null;
+            editingPostId = null;
             localStorage.removeItem("token");
             localStorage.removeItem("currentUser");
             document.getElementById("signup-form").reset();
@@ -496,10 +581,14 @@
             if (city) params.append("city", city);
             if (category) params.append("category", category);
             if (q) params.append("q", q);
+            params.append("sort", currentPostsSort);
+            params.append("page", String(currentPostsPage));
+            params.append("limit", String(postsPageSize));
 
             try {
                 const data = await api(`/posts?${params.toString()}`, { method: "GET" });
                 postsList.innerHTML = "";
+                setPostsPagination(data.page || currentPostsPage, data.total_pages || 1, data.total_items || 0);
                 if (!data.items.length) {
                     postsList.innerHTML = "<p>No posts yet.</p>";
                     return;
@@ -507,6 +596,7 @@
 
                 data.items.forEach((p) => {
                     const canRate = currentUser && currentUser.id !== p.created_by;
+                    const canManagePost = currentUser && (currentUser.id === p.created_by || currentUser.is_admin);
                     const ratingHtml = canRate
                         ? `
                         <div class="rating-box">
@@ -533,6 +623,27 @@
                     const contactDisplay = p.can_view_contact 
                         ? `<p><strong>Contact:</strong> ${p.contact} <button type="button" class="copy-btn" onclick="copyToClipboard('${p.contact.replace(/'/g, "\\'")}', this)">📋 Copy</button></p>`
                         : `<p><strong>Contact:</strong> Private (${p.contact_preview})</p>`;
+                    const editHtml = canManagePost && editingPostId === p.id
+                        ? `
+                        <div class="edit-panel">
+                            <h4>Edit Post</h4>
+                            <div class="stack">
+                                <input id="edit-title-${p.id}" value="${escapeHtml(p.title)}" placeholder="Title" />
+                                <textarea id="edit-description-${p.id}" placeholder="Description">${escapeHtml(p.description)}</textarea>
+                                <div class="grid-two">
+                                    <input id="edit-category-${p.id}" value="${escapeHtml(p.category)}" placeholder="Category" />
+                                    <input id="edit-city-${p.id}" value="${escapeHtml(p.city)}" placeholder="City" />
+                                </div>
+                                <input id="edit-contact-${p.id}" value="${p.contact ? escapeHtml(p.contact) : ""}" placeholder="Contact" />
+                                <p id="edit-status-${p.id}" class="field-error" aria-live="polite"></p>
+                                <div class="post-actions">
+                                    <button type="button" onclick="saveEditedPost(${p.id})">Save Changes</button>
+                                    <button type="button" class="ghost-btn" onclick="cancelEditingPost()">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    `
+                        : "";
                     div.innerHTML = `
                         <h3>${p.title}</h3>
                         <p>${p.description}</p>
@@ -541,11 +652,19 @@
                         ${contactDisplay}
                         <p><strong>Trust Score:</strong> ${renderStars(p.avg_rating)} (${p.avg_rating}/5 from ${p.rating_count} rating${p.rating_count === 1 ? "" : "s"})</p>
                         <p class="meta">Posted by ${p.created_by_name}</p>
+                        ${editHtml}
                         ${ratingHtml}
                     `;
                     const actions = document.createElement("div");
                     actions.className = "post-actions";
-                    if (currentUser && (currentUser.id === p.created_by || currentUser.is_admin)) {
+                    if (canManagePost) {
+                        const editBtn = document.createElement("button");
+                        editBtn.type = "button";
+                        editBtn.textContent = editingPostId === p.id ? "Editing" : "Edit Post";
+                        editBtn.disabled = editingPostId === p.id;
+                        editBtn.onclick = () => startEditingPost(p.id);
+                        actions.appendChild(editBtn);
+
                         const statusBtn = document.createElement("button");
                         statusBtn.type = "button";
                         statusBtn.textContent = p.status === "open" ? "Mark Resolved" : "Reopen";
@@ -577,6 +696,9 @@
                 });
             } catch (err) {
                 postsList.innerHTML = `<p class="field-error">${err.message}</p>`;
+                postsPageInfo.textContent = "Unable to load posts.";
+                postsPrevBtn.disabled = true;
+                postsNextBtn.disabled = true;
             }
         }
 
@@ -737,6 +859,7 @@
                 });
                 setStatus(postStatus, "Post published successfully.");
                 e.target.reset();
+                currentPostsPage = 1;
                 loadPosts();
                 loadTrustedHelpers();
             } catch (err) {
@@ -748,6 +871,26 @@
 
         document.getElementById("search-form").addEventListener("submit", async (e) => {
             e.preventDefault();
+            currentPostsPage = 1;
+            editingPostId = null;
+            loadPosts();
+        });
+        postsSortSelect.addEventListener("change", () => {
+            currentPostsSort = postsSortSelect.value;
+            currentPostsPage = 1;
+            editingPostId = null;
+            loadPosts();
+        });
+        postsPrevBtn.addEventListener("click", () => {
+            if (currentPostsPage > 1) {
+                currentPostsPage -= 1;
+                editingPostId = null;
+                loadPosts();
+            }
+        });
+        postsNextBtn.addEventListener("click", () => {
+            currentPostsPage += 1;
+            editingPostId = null;
             loadPosts();
         });
         inboxTab.addEventListener("click", () => {
